@@ -46,64 +46,68 @@ export interface DownloadStats {
 
 export interface PackageSearchResult {
   name: string;
-  namespace: string;
-  full_name: string;
+  version: string;
   description: string;
-  star_count: number;
-  pull_count: number;
-  repo_type: string;
-  is_official: boolean;
-  is_automated: boolean;
-  last_updated: string;
+  keywords: string[];
+  author: string;
+  publisher: string;
+  maintainers: string[];
+  score: {
+    final: number;
+    detail: {
+      quality: number;
+      popularity: number;
+      maintenance: number;
+    };
+  };
+  searchScore: number;
 }
 
 // Tool Parameters
 export interface GetPackageReadmeParams {
   package_name: string;    // Package name (namespace/name format)
-  tag?: string;           // Tag specification (optional, default: "latest")
+  version?: string;        // Version/tag specification (optional, default: "latest")
   include_examples?: boolean; // Whether to include examples (optional, default: true)
 }
 
 export interface GetPackageInfoParams {
   package_name: string;
-  include_tags?: boolean; // Whether to include available tags (default: true)
-  include_stats?: boolean; // Whether to include download stats (default: true)
+  include_dependencies?: boolean; // Whether to include tags as dependencies (default: true)
+  include_dev_dependencies?: boolean; // Whether to include dev-related tags (default: false)
 }
 
 export interface SearchPackagesParams {
   query: string;          // Search query
   limit?: number;         // Maximum number of results (default: 20)
-  is_official?: boolean;  // Filter for official images
-  is_automated?: boolean; // Filter for automated builds
+  quality?: number;       // Quality score minimum (0-1)
+  popularity?: number;    // Popularity score minimum (0-1)
 }
 
 // Tool Responses
 export interface PackageReadmeResponse {
   package_name: string;
-  namespace: string;
-  full_name: string;
-  tag: string;
+  version: string;
   description: string;
   readme_content: string;
   usage_examples: UsageExample[];
   installation: InstallationInfo;
   basic_info: PackageBasicInfo;
   repository?: RepositoryInfo | undefined;
-  stats: DownloadStats;
+  exists: boolean;
 }
 
 export interface PackageInfoResponse {
   package_name: string;
-  namespace: string;
-  full_name: string;
-  latest_tag: string;
+  latest_version: string;
   description: string;
-  author?: string;
+  author: string;
+  license: string;
   keywords: string[];
-  available_tags?: string[] | undefined;
-  stats: DownloadStats;
+  dependencies: Record<string, string>;
+  dev_dependencies: Record<string, string>;
+  download_stats: DownloadStats;
   repository?: RepositoryInfo | undefined;
-  last_updated: string;
+  exists: boolean;
 }
 
 export interface SearchPackagesResponse {

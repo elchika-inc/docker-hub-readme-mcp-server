@@ -10,20 +10,19 @@ import type {
   InstallationInfo,
   PackageBasicInfo,
   RepositoryInfo,
-  DownloadStats,
 } from '../types/index.js';
 
 const dockerHubApi = new DockerHubApi();
 
 export async function getPackageReadme(params: GetPackageReadmeParams): Promise<PackageReadmeResponse> {
-  const { package_name, tag = 'latest', include_examples = true } = params;
+  const { package_name, version = 'latest', include_examples = true } = params;
 
-  logger.info(`Fetching Docker image README: ${package_name}:${tag}`);
+  logger.info(`Fetching Docker image README: ${package_name}:${version}`);
 
   // Validate inputs
   validateImageName(package_name);
-  if (tag !== 'latest') {
-    validateTag(tag);
+  if (version !== 'latest') {
+    validateTag(version);
   }
 
   // Parse image name
@@ -31,22 +30,66 @@ export async function getPackageReadme(params: GetPackageReadmeParams): Promise<
   const fullName = `${namespace}/${name}`;
 
   // Check cache first
-  const cacheKey = createCacheKey.imageReadme(fullName, tag);
+  const cacheKey = createCacheKey.imageReadme(fullName, version);
   const cached = cache.get<PackageReadmeResponse>(cacheKey);
   if (cached) {
-    logger.debug(`Cache hit for image README: ${fullName}:${tag}`);
+    logger.debug(`Cache hit for image README: ${fullName}:${version}`);
     return cached;
   }
 
   try {
-    // Get repository info from Docker Hub
-    const repository = await dockerHubApi.getRepository(namespace, name);
+    // First, verify package exists by trying to get repository info
+    logger.debug(`Checking package existence: ${package_name}`);
+    let repository;
+    let packageExists = true;
+    
+    try {
+      repository = await dockerHubApi.getRepository(namespace, name);
+      logger.debug(`Package found: ${package_name}`);
+    } catch (error: any) {
+      if (error.statusCode === 404) {
+        packageExists = false;
+        logger.debug(`Package not found: ${package_name}`);
+      } else {
+        throw error;
+      }
+    }
+    
+    // If package doesn't exist, return response with exists: false
+    if (!packageExists) {
+      const response: PackageReadmeResponse = {
+        package_name,
+        version,
+        description: '',
+        readme_content: '',
+        usage_examples: [],
+        installation: {
+          pull: `docker pull ${package_name}:${version}`,
+        },
+        basic_info: {
+          name: package_name.split('/').pop() || package_name,
+          version,
+          description: '',
+          namespace: namespace,
+          full_name: fullName,
+          author: '',
+          keywords: [],
+          architecture: [],
+          os: [],
+        },
+        exists: false,
+      };
+      
+      // Cache the response
+      cache.set(cacheKey, response);
+      return response;
+    }
     
     // Verify tag exists if not 'latest'
-    if (tag !== 'latest') {
-      const tagExists = await dockerHubApi.validateTagExists(namespace, name, tag);
+    if (version !== 'latest') {
+      const tagExists = await dockerHubApi.validateTagExists(namespace, name, version);
       if (!tagExists) {
-        throw new Error(`Tag '${tag}' not found for image '${fullName}'`);
+        throw new Error(`Tag '${version}' not found for image '${fullName}'`);
       }
     }
 
@@ -55,15 +98,15 @@ export async function getPackageReadme(params: GetPackageReadmeParams): Promise<
     let readmeSource = 'none';
 
     // First, try to get README from Docker Hub
-    if (repository.full_description) {
-      readmeContent = repository.full_description;
+    if (repository!.full_description) {
+      readmeContent = repository!.full_description;
       readmeSource = 'docker-hub';
       logger.debug(`Got README from Docker Hub: ${fullName}`);
     }
     // If no README in Docker Hub and we have repository info, try GitHub as fallback
     else {
       // Try to infer GitHub repository from various sources
-      const githubRepo = await inferGitHubRepository(repository);
+      const githubRepo = await inferGitHubRepository(repository!);
       if (githubRepo) {
         const githubReadme = await githubApi.getReadmeFromRepository(githubRepo);
         if (githubReadme) {
@@ -82,46 +125,41 @@ export async function getPackageReadme(params: GetPackageReadmeParams): Promise<
 
     // Create installation info
     const installation: InstallationInfo = {
-      pull: `docker pull ${fullName}:${tag}`,
-      run: `docker run ${fullName}:${tag}`,
+      pull: `docker pull ${fullName}:${version}`,
+      run: `docker run ${fullName}:${version}`,
     };
 
     // Add docker-compose example if it's a common service
     if (isCommonService(name)) {
-      installation.compose = generateComposeExample(fullName, tag);
+      installation.compose = generateComposeExample(fullName, version);
     }
 
     // Get tag details for additional info
-    const tagDetails = await dockerHubApi.getTagDetails(namespace, name, tag);
+    const tagDetails = await dockerHubApi.getTagDetails(namespace, name, version);
     const architectures = tagDetails?.images.map(img => img.architecture) || [];
     const osTypes = tagDetails?.images.map(img => img.os) || [];
 
     // Create basic info
     const basicInfo: PackageBasicInfo = {
       name,
-      version: tag,
-      description: repository.description || 'No description available',
+      version,
+      description: repository!.description || 'No description available',
       namespace,
       full_name: fullName,
       homepage: undefined, // Docker Hub doesn't provide homepage directly
       dockerfile: undefined, // Could be inferred from repository
       license: undefined, // Not available in Docker Hub API
-      author: repository.user,
-      keywords: repository.categories?.map(cat => cat.name) || [],
+      author: repository!.user,
+      keywords: repository!.categories?.map(cat => cat.name) || [],
       architecture: [...new Set(architectures)],
       os: [...new Set(osTypes)],
     };
 
-    // Create stats
-    const stats: DownloadStats = {
-      pull_count: repository.pull_count,
-      star_count: repository.star_count,
-      last_updated: repository.last_updated,
-    };
+    // No longer needed as DownloadStats is removed from PackageReadmeResponse
 
     // Create repository info (for GitHub fallback)
     let repositoryInfo: RepositoryInfo | undefined;
-    const githubRepo = await inferGitHubRepository(repository);
+    const githubRepo = await inferGitHubRepository(repository!);
     if (githubRepo) {
       repositoryInfo = githubRepo;
     }
@@ -129,26 +167,24 @@ export async function getPackageReadme(params: GetPackageReadmeParams): Promise<
     // Create response
     const response: PackageReadmeResponse = {
       package_name,
-      namespace,
-      full_name: fullName,
-      tag,
+      version,
       description: basicInfo.description,
       readme_content: cleanedReadme,
       usage_examples: usageExamples,
       installation,
       basic_info: basicInfo,
       repository: repositoryInfo,
-      stats,
+      exists: true,
     };
 
     // Cache the response
     cache.set(cacheKey, response);
 
-    logger.info(`Successfully fetched image README: ${fullName}:${tag} (README source: ${readmeSource})`);
+    logger.info(`Successfully fetched image README: ${fullName}:${version} (README source: ${readmeSource})`);
     return response;
 
   } catch (error) {
-    logger.error(`Failed to fetch image README: ${package_name}:${tag}`, { error });
+    logger.error(`Failed to fetch image README: ${package_name}:${version}`, { error });
     throw error;
   }
 }
@@ -169,12 +205,12 @@ function isCommonService(name: string): boolean {
   return commonServices.includes(name.toLowerCase());
 }
 
-function generateComposeExample(fullName: string, tag: string): string {
+function generateComposeExample(fullName: string, version: string): string {
   const serviceName = fullName.split('/').pop() || 'app';
   return `version: '3.8'
 services:
   ${serviceName}:
-    image: ${fullName}:${tag}
+    image: ${fullName}:${version}
     ports:
       - "8080:80"`;
 }

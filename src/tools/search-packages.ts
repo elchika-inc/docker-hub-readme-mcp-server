@@ -11,7 +11,7 @@ import type {
 const dockerHubApi = new DockerHubApi();
 
 export async function searchPackages(params: SearchPackagesParams): Promise<SearchPackagesResponse> {
-  const { query, limit = 20, is_official, is_automated } = params;
+  const { query, limit = 20, quality, popularity } = params;
 
   logger.info(`Searching Docker images: ${query} (limit: ${limit})`);
 
@@ -20,7 +20,7 @@ export async function searchPackages(params: SearchPackagesParams): Promise<Sear
   validateLimit(limit);
 
   // Check cache first
-  const cacheKey = createCacheKey.searchResults(query, limit, is_official, is_automated);
+  const cacheKey = createCacheKey.searchResults(query, limit, undefined, undefined);
   const cached = cache.get<SearchPackagesResponse>(cacheKey);
   if (cached) {
     logger.debug(`Cache hit for search: ${query}`);
@@ -29,27 +29,50 @@ export async function searchPackages(params: SearchPackagesParams): Promise<Sear
 
   try {
     // Search repositories on Docker Hub
+    // Note: Docker Hub API doesn't support quality/popularity filters directly
+    // We'll use is_official as a proxy for quality
     const searchResponse = await dockerHubApi.searchRepositories(
       query,
       1, // page
       limit, // page_size
-      is_official,
-      is_automated
+      quality ? quality > 0.5 : undefined, // use quality as is_official filter
+      undefined // is_automated not used
     );
 
     // Transform search results
-    const packages: PackageSearchResult[] = searchResponse.results.map(result => ({
-      name: result.repo_name.split('/').pop() || result.repo_name,
-      namespace: result.repo_owner,
-      full_name: result.repo_name,
-      description: result.short_description || 'No description available',
-      star_count: result.star_count,
-      pull_count: result.pull_count,
-      repo_type: result.is_official ? 'official' : 'user',
-      is_official: result.is_official,
-      is_automated: result.is_automated,
-      last_updated: result.last_updated,
-    }));
+    const packages: PackageSearchResult[] = searchResponse.results
+      .map(result => {
+        // Calculate quality and popularity scores
+        const qualityScore = result.is_official ? 1.0 : Math.min(result.star_count / 1000, 1.0);
+        const popularityScore = Math.min(result.pull_count / 1000000, 1.0);
+        const maintenanceScore = isRecentlyUpdated(result.last_updated) ? 1.0 : 0.5;
+        const finalScore = (qualityScore + popularityScore + maintenanceScore) / 3;
+        
+        return {
+          name: result.repo_name,
+          version: 'latest',
+          description: result.short_description || 'No description available',
+          keywords: [], // Not available in Docker Hub search API
+          author: result.repo_owner,
+          publisher: result.repo_owner,
+          maintainers: [result.repo_owner],
+          score: {
+            final: finalScore,
+            detail: {
+              quality: qualityScore,
+              popularity: popularityScore,
+              maintenance: maintenanceScore,
+            },
+          },
+          searchScore: finalScore,
+        };
+      })
+      .filter(pkg => {
+        // Apply quality and popularity filters if specified
+        if (quality && pkg.score.detail.quality < quality) return false;
+        if (popularity && pkg.score.detail.popularity < popularity) return false;
+        return true;
+      });
 
     // Create response
     const response: SearchPackagesResponse = {
@@ -68,4 +91,11 @@ export async function searchPackages(params: SearchPackagesParams): Promise<Sear
     logger.error(`Failed to search images: ${query}`, { error });
     throw error;
   }
+}
+
+function isRecentlyUpdated(lastUpdated: string): boolean {
+  const lastUpdateDate = new Date(lastUpdated);
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  return lastUpdateDate > sixMonthsAgo;
 }

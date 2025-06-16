@@ -3,6 +3,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
   CallToolRequestSchema,
   ErrorCode,
+  ListPromptsRequestSchema,
+  ListResourcesRequestSchema,
   ListToolsRequestSchema,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
@@ -31,19 +33,19 @@ const TOOL_DEFINITIONS = {
           type: 'string',
           description: 'The name of the Docker image (namespace/name format, e.g., "nginx", "library/nginx", "microsoft/dotnet")',
         },
-        tag: {
+        version: {
           type: 'string',
-          description: 'The tag of the image (default: "latest")',
+          description: 'The tag/version of the image (default: "latest")',
           default: 'latest',
         },
         include_examples: {
           type: 'boolean',
           description: 'Whether to include usage examples (default: true)',
           default: true,
-        },
+        }
       },
       required: ['package_name'],
-    },
+    }
   },
   get_package_info: {
     name: 'get_package_info',
@@ -55,19 +57,19 @@ const TOOL_DEFINITIONS = {
           type: 'string',
           description: 'The name of the Docker image (namespace/name format)',
         },
-        include_tags: {
+        include_dependencies: {
           type: 'boolean',
-          description: 'Whether to include available tags (default: true)',
+          description: 'Whether to include tags as dependencies (default: true)',
           default: true,
         },
-        include_stats: {
+        include_dev_dependencies: {
           type: 'boolean',
-          description: 'Whether to include download and star statistics (default: true)',
-          default: true,
-        },
+          description: 'Whether to include development-related tags (default: false)',
+          default: false,
+        }
       },
       required: ['package_name'],
-    },
+    }
   },
   search_packages: {
     name: 'search_packages',
@@ -86,17 +88,21 @@ const TOOL_DEFINITIONS = {
           minimum: 1,
           maximum: 100,
         },
-        is_official: {
-          type: 'boolean',
-          description: 'Filter for official images only',
+        quality: {
+          type: 'number',
+          description: 'Quality score minimum (0-1)',
+          minimum: 0,
+          maximum: 1,
         },
-        is_automated: {
-          type: 'boolean',
-          description: 'Filter for automated builds only',
-        },
+        popularity: {
+          type: 'number',
+          description: 'Popularity score minimum (0-1)',
+          minimum: 0,
+          maximum: 1,
+        }
       },
       required: ['query'],
-    },
+    }
   },
 } as const;
 
@@ -112,7 +118,9 @@ export class DockerHubMcpServer {
       {
         capabilities: {
           tools: {},
-        },
+          prompts: {},
+          resources: {},
+        }
       }
     );
 
@@ -121,14 +129,24 @@ export class DockerHubMcpServer {
 
   private setupHandlers(): void {
     // List available tools
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
+    (this.server as any).setRequestHandler(ListToolsRequestSchema, async () => {
       return {
         tools: Object.values(TOOL_DEFINITIONS),
       };
     });
 
+    // Handle prompts list
+    (this.server as any).setRequestHandler(ListPromptsRequestSchema, async () => {
+      return { prompts: [] };
+    });
+
+    // Handle resources list
+    (this.server as any).setRequestHandler(ListResourcesRequestSchema, async () => {
+      return { resources: [] };
+    });
+
     // Handle tool calls
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    (this.server as any).setRequestHandler(CallToolRequestSchema, async (request: any, _extra: any) => {
       const { name, arguments: args } = request.params;
       
 
@@ -199,10 +217,10 @@ export class DockerHubMcpServer {
     }
 
     // Validate optional parameters
-    if (params.tag !== undefined && typeof params.tag !== 'string') {
+    if (params.version !== undefined && typeof params.version !== 'string') {
       throw new McpError(
         ErrorCode.InvalidParams,
-        'tag must be a string'
+        'version must be a string'
       );
     }
 
@@ -217,8 +235,8 @@ export class DockerHubMcpServer {
       package_name: params.package_name,
     };
     
-    if (params.tag !== undefined) {
-      result.tag = params.tag as string;
+    if (params.version !== undefined) {
+      result.version = params.version as string;
     }
     
     if (params.include_examples !== undefined) {
@@ -234,9 +252,9 @@ export class DockerHubMcpServer {
       content: [
         {
           type: 'text',
-          text: JSON.stringify(result, null, 2),
-        },
-      ],
+          text: JSON.stringify(result, null, 2)
+        }
+      ]
     };
   }
 
@@ -259,17 +277,17 @@ export class DockerHubMcpServer {
     }
 
     // Validate optional parameters
-    if (params.include_tags !== undefined && typeof params.include_tags !== 'boolean') {
+    if (params.include_dependencies !== undefined && typeof params.include_dependencies !== 'boolean') {
       throw new McpError(
         ErrorCode.InvalidParams,
-        'include_tags must be a boolean'
+        'include_dependencies must be a boolean'
       );
     }
 
-    if (params.include_stats !== undefined && typeof params.include_stats !== 'boolean') {
+    if (params.include_dev_dependencies !== undefined && typeof params.include_dev_dependencies !== 'boolean') {
       throw new McpError(
         ErrorCode.InvalidParams,
-        'include_stats must be a boolean'
+        'include_dev_dependencies must be a boolean'
       );
     }
 
@@ -277,12 +295,12 @@ export class DockerHubMcpServer {
       package_name: params.package_name,
     };
     
-    if (params.include_tags !== undefined) {
-      result.include_tags = params.include_tags as boolean;
+    if (params.include_dependencies !== undefined) {
+      result.include_dependencies = params.include_dependencies as boolean;
     }
     
-    if (params.include_stats !== undefined) {
-      result.include_stats = params.include_stats as boolean;
+    if (params.include_dev_dependencies !== undefined) {
+      result.include_dev_dependencies = params.include_dev_dependencies as boolean;
     }
     
     return result;
@@ -294,9 +312,9 @@ export class DockerHubMcpServer {
       content: [
         {
           type: 'text',
-          text: JSON.stringify(result, null, 2),
-        },
-      ],
+          text: JSON.stringify(result, null, 2)
+        }
+      ]
     };
   }
 
@@ -328,18 +346,22 @@ export class DockerHubMcpServer {
       }
     }
 
-    if (params.is_official !== undefined && typeof params.is_official !== 'boolean') {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        'is_official must be a boolean'
-      );
+    if (params.quality !== undefined) {
+      if (typeof params.quality !== 'number' || params.quality < 0 || params.quality > 1) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          'quality must be a number between 0 and 1'
+        );
+      }
     }
 
-    if (params.is_automated !== undefined && typeof params.is_automated !== 'boolean') {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        'is_automated must be a boolean'
-      );
+    if (params.popularity !== undefined) {
+      if (typeof params.popularity !== 'number' || params.popularity < 0 || params.popularity > 1) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          'popularity must be a number between 0 and 1'
+        );
+      }
     }
 
     const result: SearchPackagesParams = {
@@ -350,12 +372,12 @@ export class DockerHubMcpServer {
       result.limit = params.limit as number;
     }
     
-    if (params.is_official !== undefined) {
-      result.is_official = params.is_official as boolean;
+    if (params.quality !== undefined) {
+      result.quality = params.quality as number;
     }
     
-    if (params.is_automated !== undefined) {
-      result.is_automated = params.is_automated as boolean;
+    if (params.popularity !== undefined) {
+      result.popularity = params.popularity as number;
     }
     
     return result;
@@ -367,9 +389,9 @@ export class DockerHubMcpServer {
       content: [
         {
           type: 'text',
-          text: JSON.stringify(result, null, 2),
-        },
-      ],
+          text: JSON.stringify(result, null, 2)
+        }
+      ]
     };
   }
 
@@ -395,7 +417,7 @@ export class DockerHubMcpServer {
   async run(): Promise<void> {
     try {
       const transport = new StdioServerTransport();
-      await this.server.connect(transport);
+      await (this.server as any).connect(transport);
     } catch (error) {
       logger.error('Failed to start server transport', { error });
       throw error;
@@ -403,7 +425,7 @@ export class DockerHubMcpServer {
   }
 
   async stop(): Promise<void> {
-    await this.server.close();
+    await (this.server as any).close();
   }
 }
 
