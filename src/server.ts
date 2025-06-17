@@ -23,8 +23,8 @@ import {
 } from './types/index.js';
 
 const TOOL_DEFINITIONS = {
-  get_package_readme: {
-    name: 'get_package_readme',
+  get_readme_from_docker: {
+    name: 'get_readme_from_docker',
     description: 'Get Docker image README and usage examples from Docker Hub',
     inputSchema: {
       type: 'object',
@@ -47,8 +47,8 @@ const TOOL_DEFINITIONS = {
       required: ['package_name'],
     }
   },
-  get_package_info: {
-    name: 'get_package_info',
+  get_package_info_from_docker: {
+    name: 'get_package_info_from_docker',
     description: 'Get Docker image basic information and metadata from Docker Hub',
     inputSchema: {
       type: 'object',
@@ -71,8 +71,8 @@ const TOOL_DEFINITIONS = {
       required: ['package_name'],
     }
   },
-  search_packages: {
-    name: 'search_packages',
+  search_packages_from_docker: {
+    name: 'search_packages_from_docker',
     description: 'Search for Docker images in Docker Hub',
     inputSchema: {
       type: 'object',
@@ -160,13 +160,13 @@ export class DockerHubMcpServer {
         }
 
         switch (name) {
-          case 'get_package_readme':
+          case 'get_readme_from_docker':
             return await this.handleGetPackageReadme(this.validateGetPackageReadmeParams(args));
           
-          case 'get_package_info':
+          case 'get_package_info_from_docker':
             return await this.handleGetPackageInfo(this.validateGetPackageInfoParams(args));
           
-          case 'search_packages':
+          case 'search_packages_from_docker':
             return await this.handleSearchPackages(this.validateSearchPackagesParams(args));
           
           default:
