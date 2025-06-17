@@ -1,20 +1,38 @@
 # Docker Hub README MCP Server
 
-A Model Context Protocol (MCP) server that provides tools to fetch Docker image information, README content, and usage examples from Docker Hub.
+[![npm version](https://img.shields.io/npm/v/docker-hub-readme-mcp-server)](https://www.npmjs.com/package/docker-hub-readme-mcp-server)
+[![npm downloads](https://img.shields.io/npm/dm/docker-hub-readme-mcp-server)](https://www.npmjs.com/package/docker-hub-readme-mcp-server)
+[![GitHub stars](https://img.shields.io/github/stars/naoto24kawa/package-readme-mcp-servers)](https://github.com/naoto24kawa/package-readme-mcp-servers)
+[![GitHub issues](https://img.shields.io/github/issues/naoto24kawa/package-readme-mcp-servers)](https://github.com/naoto24kawa/package-readme-mcp-servers/issues)
+[![license](https://img.shields.io/npm/l/docker-hub-readme-mcp-server)](https://github.com/naoto24kawa/package-readme-mcp-servers/blob/main/LICENSE)
+
+A Model Context Protocol (MCP) server that provides tools to fetch Docker image information, README content, and usage examples from Docker Hub. This server enables seamless integration with Docker Hub to retrieve detailed information about container images.
 
 ## Features
 
-- **Get Docker Image README**: Fetch README content and usage examples from Docker Hub
-- **Get Docker Image Info**: Retrieve basic information, tags, and statistics for Docker images
-- **Search Docker Images**: Search for Docker images on Docker Hub with filtering options
-- **Caching**: Built-in memory caching for improved performance
-- **Error Handling**: Comprehensive error handling with retry logic
-- **GitHub Fallback**: Attempts to fetch README from GitHub repositories when available
+- 🐳 **Get Docker Image README**: Fetch comprehensive README content and usage examples from Docker Hub
+- 📊 **Get Docker Image Info**: Retrieve detailed information, available tags, and download statistics for Docker images
+- 🔍 **Search Docker Images**: Search for Docker images on Docker Hub with advanced filtering options
+- ⚡ **Intelligent Caching**: Built-in LRU memory caching with configurable TTL for optimal performance
+- 🛡️ **Robust Error Handling**: Comprehensive error handling with exponential backoff retry logic
+- 🔄 **GitHub Fallback**: Automatically attempts to fetch README from linked GitHub repositories when Docker Hub content is unavailable
+- 📈 **Rate Limit Handling**: Smart handling of Docker Hub API rate limits
 
 ## Installation
 
+### From npm
+
 ```bash
 npm install docker-hub-readme-mcp-server
+```
+
+### From source
+
+```bash
+git clone https://github.com/your-username/package-readme-mcp-servers.git
+cd package-readme-mcp-servers/docker-hub-readme-mcp-server
+npm install
+npm run build
 ```
 
 ## Usage
@@ -22,6 +40,10 @@ npm install docker-hub-readme-mcp-server
 ### MCP Client Configuration
 
 Add the server to your MCP client configuration:
+
+#### Claude Desktop
+
+Add to your `claude_desktop_config.json`:
 
 ```json
 {
@@ -33,6 +55,20 @@ Add the server to your MCP client configuration:
         "GITHUB_TOKEN": "your-github-token-here"
       }
     }
+  }
+}
+```
+
+#### Other MCP Clients
+
+```json
+{
+  "name": "docker-hub-readme",
+  "command": "npx",
+  "args": ["docker-hub-readme-mcp-server"],
+  "env": {
+    "GITHUB_TOKEN": "your-github-token-here",
+    "LOG_LEVEL": "info"
   }
 }
 ```
@@ -254,17 +290,32 @@ The server includes comprehensive error handling:
 
 ## API Limitations
 
-- Docker Hub API has rate limits for anonymous requests
-- Some metadata (like repository links) may not be available through Docker Hub API
-- Official images use the `library` namespace internally
+- **Rate Limits**: Docker Hub API has rate limits for anonymous requests (100 requests per hour)
+- **Metadata Availability**: Some metadata (like repository links) may not be available through Docker Hub API
+- **Official Images**: Official images use the `library` namespace internally
+- **Private Repositories**: This server only supports public Docker images
+- **Image Layers**: Detailed layer information is not provided by the Docker Hub API
 
 ## Contributing
 
+We welcome contributions! Please follow these steps:
+
 1. Fork the repository
-2. Create a feature branch
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+4. Add tests if applicable (`npm test`)
+5. Ensure code quality (`npm run lint && npm run typecheck`)
+6. Commit your changes (`git commit -m 'Add amazing feature'`)
+7. Push to the branch (`git push origin feature/amazing-feature`)
+8. Submit a pull request
+
+### Development Guidelines
+
+- Follow TypeScript best practices
+- Add comprehensive error handling
+- Include unit tests for new features
+- Update documentation as needed
+- Follow the existing code style
 
 ## License
 
