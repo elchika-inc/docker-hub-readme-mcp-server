@@ -1,49 +1,24 @@
 # Docker Hub README MCP Server
 
+[![license](https://img.shields.io/npm/l/docker-hub-readme-mcp-server)](https://github.com/elchika-inc/docker-hub-readme-mcp-server/blob/main/LICENSE)
 [![npm version](https://img.shields.io/npm/v/docker-hub-readme-mcp-server)](https://www.npmjs.com/package/docker-hub-readme-mcp-server)
 [![npm downloads](https://img.shields.io/npm/dm/docker-hub-readme-mcp-server)](https://www.npmjs.com/package/docker-hub-readme-mcp-server)
-[![GitHub stars](https://img.shields.io/github/stars/naoto24kawa/package-readme-mcp-servers)](https://github.com/naoto24kawa/package-readme-mcp-servers)
-[![GitHub issues](https://img.shields.io/github/issues/naoto24kawa/package-readme-mcp-servers)](https://github.com/naoto24kawa/package-readme-mcp-servers/issues)
-[![license](https://img.shields.io/npm/l/docker-hub-readme-mcp-server)](https://github.com/naoto24kawa/package-readme-mcp-servers/blob/main/LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/elchika-inc/docker-hub-readme-mcp-server)](https://github.com/elchika-inc/docker-hub-readme-mcp-server)
 
-A Model Context Protocol (MCP) server that provides tools to fetch Docker image information, README content, and usage examples from Docker Hub. This server enables seamless integration with Docker Hub to retrieve detailed information about container images.
+An MCP (Model Context Protocol) server that enables AI assistants to fetch comprehensive information about Docker images from Docker Hub, including README content, image metadata, and search functionality.
 
 ## Features
 
-- 🐳 **Get Docker Image README**: Fetch comprehensive README content and usage examples from Docker Hub
-- 📊 **Get Docker Image Info**: Retrieve detailed information, available tags, and download statistics for Docker images
-- 🔍 **Search Docker Images**: Search for Docker images on Docker Hub with advanced filtering options
-- ⚡ **Intelligent Caching**: Built-in LRU memory caching with configurable TTL for optimal performance
-- 🛡️ **Robust Error Handling**: Comprehensive error handling with exponential backoff retry logic
-- 🔄 **GitHub Fallback**: Automatically attempts to fetch README from linked GitHub repositories when Docker Hub content is unavailable
-- 📈 **Rate Limit Handling**: Smart handling of Docker Hub API rate limits
+- **Package README Retrieval**: Fetch formatted README content with usage examples from Docker images hosted on Docker Hub
+- **Package Information**: Get comprehensive image metadata including available tags, download statistics, and configuration details
+- **Package Search**: Search Docker Hub with filtering by official images, automated builds, and popularity
+- **Smart Caching**: Intelligent caching system to optimize API usage and improve response times
+- **GitHub Integration**: Seamless integration with GitHub API for enhanced README fetching from linked repositories
+- **Error Handling**: Robust error handling with automatic retry logic and fallback strategies
 
-## Installation
+## MCP Client Configuration
 
-### From npm
-
-```bash
-npm install docker-hub-readme-mcp-server
-```
-
-### From source
-
-```bash
-git clone https://github.com/your-username/package-readme-mcp-servers.git
-cd package-readme-mcp-servers/docker-hub-readme-mcp-server
-npm install
-npm run build
-```
-
-## Usage
-
-### MCP Client Configuration
-
-Add the server to your MCP client configuration:
-
-#### Claude Desktop
-
-Add to your `claude_desktop_config.json`:
+Add this server to your MCP client configuration:
 
 ```json
 {
@@ -52,277 +27,84 @@ Add to your `claude_desktop_config.json`:
       "command": "npx",
       "args": ["docker-hub-readme-mcp-server"],
       "env": {
-        "GITHUB_TOKEN": "your-github-token-here"
+        "GITHUB_TOKEN": "your_github_token_here"
       }
     }
   }
 }
 ```
 
-#### Other MCP Clients
+> **Note**: The `GITHUB_TOKEN` is optional but recommended for higher API rate limits when fetching README content from GitHub.
 
-```json
-{
-  "name": "docker-hub-readme",
-  "command": "npx",
-  "args": ["docker-hub-readme-mcp-server"],
-  "env": {
-    "GITHUB_TOKEN": "your-github-token-here",
-    "LOG_LEVEL": "info"
-  }
-}
-```
+## Available Tools
 
-### Available Tools
+### get_package_readme
 
-#### 1. get_package_readme
-
-Fetches README content and usage examples for a Docker image.
+Retrieves comprehensive README content and usage examples for Docker images.
 
 **Parameters:**
-- `package_name` (required): Docker image name (e.g., "nginx", "library/nginx", "microsoft/dotnet")
-- `tag` (optional): Image tag (default: "latest")
-- `include_examples` (optional): Whether to include usage examples (default: true)
-
-**Example:**
-```json
-{
-  "tool": "get_package_readme",
-  "arguments": {
-    "package_name": "nginx",
-    "tag": "alpine"
-  }
-}
-```
-
-#### 2. get_package_info
-
-Retrieves basic information and metadata for a Docker image.
-
-**Parameters:**
-- `package_name` (required): Docker image name
-- `include_tags` (optional): Whether to include available tags (default: true)
-- `include_stats` (optional): Whether to include download statistics (default: true)
-
-**Example:**
-```json
-{
-  "tool": "get_package_info",
-  "arguments": {
-    "package_name": "postgres",
-    "include_tags": true
-  }
-}
-```
-
-#### 3. search_packages
-
-Searches for Docker images on Docker Hub.
-
-**Parameters:**
-- `query` (required): Search query
-- `limit` (optional): Maximum number of results (default: 20, max: 100)
-- `is_official` (optional): Filter for official images only
-- `is_automated` (optional): Filter for automated builds only
-
-**Example:**
-```json
-{
-  "tool": "search_packages",
-  "arguments": {
-    "query": "web server",
-    "limit": 10,
-    "is_official": true
-  }
-}
-```
-
-## Docker Image Name Formats
-
-The server supports various Docker image name formats:
-
-- **Official images**: `nginx`, `postgres`, `ubuntu`
-- **User/organization images**: `microsoft/dotnet`, `bitnami/nginx`
-- **Fully qualified**: `namespace/name:tag`
-
-## Response Format
-
-### get_package_readme Response
-
 ```json
 {
   "package_name": "nginx",
-  "namespace": "library",
-  "full_name": "library/nginx",
-  "tag": "latest",
-  "description": "Official build of Nginx.",
-  "readme_content": "# Nginx Docker Image\n...",
-  "usage_examples": [
-    {
-      "title": "Run Container",
-      "code": "docker run -d -p 80:80 nginx",
-      "language": "bash"
-    }
-  ],
-  "installation": {
-    "pull": "docker pull nginx:latest",
-    "run": "docker run nginx:latest"
-  },
-  "basic_info": {
-    "name": "nginx",
-    "version": "latest",
-    "description": "Official build of Nginx.",
-    "namespace": "library",
-    "full_name": "library/nginx",
-    "author": "library",
-    "keywords": ["web", "server"],
-    "architecture": ["amd64", "arm64"],
-    "os": ["linux"]
-  },
-  "stats": {
-    "pull_count": 1000000000,
-    "star_count": 15000,
-    "last_updated": "2024-01-15T10:30:00Z"
-  }
+  "version": "latest",
+  "include_examples": true
 }
 ```
 
-### get_package_info Response
+- `package_name` (string, required): Docker image name (e.g., "nginx", "postgres", "microsoft/dotnet")
+- `version` (string, optional): Specific image tag or "latest" (default: "latest")
+- `include_examples` (boolean, optional): Include usage examples and Docker commands (default: true)
 
+**Returns:** Formatted README content with Docker run commands, usage examples, and configuration documentation.
+
+### get_package_info
+
+Fetches detailed image metadata, tags, and statistics from Docker Hub.
+
+**Parameters:**
 ```json
 {
   "package_name": "postgres",
-  "namespace": "library",
-  "full_name": "library/postgres",
-  "latest_tag": "latest",
-  "description": "The PostgreSQL object-relational database system",
-  "author": "library",
-  "keywords": ["database", "sql"],
-  "available_tags": ["latest", "16", "15", "14", "13"],
-  "stats": {
-    "pull_count": 500000000,
-    "star_count": 8000,
-    "last_updated": "2024-01-10T08:45:00Z"
-  },
-  "last_updated": "2024-01-10T08:45:00Z"
+  "include_dependencies": true,
+  "include_tags": true
 }
 ```
 
-### search_packages Response
+- `package_name` (string, required): Docker image name
+- `include_dependencies` (boolean, optional): Include base image information (default: true)
+- `include_tags` (boolean, optional): Include available tags (default: true)
 
+**Returns:** Image metadata including available tags, maintainer info, download stats, and platform support.
+
+### search_packages
+
+Searches Docker Hub for images with filtering capabilities.
+
+**Parameters:**
 ```json
 {
   "query": "web server",
-  "total": 1250,
-  "packages": [
-    {
-      "name": "nginx",
-      "namespace": "library",
-      "full_name": "library/nginx",
-      "description": "Official build of Nginx.",
-      "star_count": 15000,
-      "pull_count": 1000000000,
-      "repo_type": "official",
-      "is_official": true,
-      "is_automated": false,
-      "last_updated": "2024-01-15T10:30:00Z"
-    }
-  ]
+  "limit": 20,
+  "official_only": false
 }
 ```
 
-## Development
+- `query` (string, required): Search terms (image name, description, keywords)
+- `limit` (number, optional): Maximum number of results to return (default: 20, max: 100)
+- `official_only` (boolean, optional): Filter to official images only (default: false)
 
-### Requirements
-
-- Node.js 18+
-- TypeScript 5+
-
-### Setup
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd docker-hub-readme-mcp-server
-
-# Install dependencies
-npm install
-
-# Build the project
-npm run build
-
-# Run in development mode
-npm run dev
-```
-
-### Scripts
-
-- `npm run build`: Compile TypeScript to JavaScript
-- `npm run dev`: Run in development mode with hot reload
-- `npm start`: Start the production server
-- `npm test`: Run tests
-- `npm run lint`: Lint the code
-- `npm run typecheck`: Check TypeScript types
-
-## Environment Variables
-
-- `GITHUB_TOKEN`: GitHub personal access token for enhanced README fetching (optional)
-- `LOG_LEVEL`: Logging level (error, warn, info, debug) - default: warn
-- `CACHE_TTL`: Cache time-to-live in milliseconds - default: 3600000 (1 hour)
-- `CACHE_MAX_SIZE`: Maximum cache size in bytes - default: 104857600 (100MB)
-
-## Caching
-
-The server implements intelligent caching to improve performance:
-
-- **Memory Cache**: LRU cache with configurable TTL and size limits
-- **Cache Keys**: Hierarchical cache keys for different data types
-- **Automatic Cleanup**: Periodic cleanup of expired cache entries
+**Returns:** List of matching images with names, descriptions, star counts, and pull statistics.
 
 ## Error Handling
 
-The server includes comprehensive error handling:
+The server handles common error scenarios gracefully:
 
-- **Validation**: Input parameter validation
-- **Retry Logic**: Automatic retry with exponential backoff
-- **Rate Limiting**: Handles Docker Hub API rate limits
-- **Fallback**: GitHub API fallback for README content
-
-## API Limitations
-
-- **Rate Limits**: Docker Hub API has rate limits for anonymous requests (100 requests per hour)
-- **Metadata Availability**: Some metadata (like repository links) may not be available through Docker Hub API
-- **Official Images**: Official images use the `library` namespace internally
-- **Private Repositories**: This server only supports public Docker images
-- **Image Layers**: Detailed layer information is not provided by the Docker Hub API
-
-## Contributing
-
-We welcome contributions! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Add tests if applicable (`npm test`)
-5. Ensure code quality (`npm run lint && npm run typecheck`)
-6. Commit your changes (`git commit -m 'Add amazing feature'`)
-7. Push to the branch (`git push origin feature/amazing-feature`)
-8. Submit a pull request
-
-### Development Guidelines
-
-- Follow TypeScript best practices
-- Add comprehensive error handling
-- Include unit tests for new features
-- Update documentation as needed
-- Follow the existing code style
+- **Image not found**: Returns clear error messages with similar image suggestions
+- **Rate limiting**: Implements automatic retry with exponential backoff
+- **Network timeouts**: Configurable timeout with retry logic
+- **Invalid image names**: Validates image name format and provides guidance
+- **Docker Hub API failures**: Fallback strategies when API is unavailable
 
 ## License
 
-MIT License - see LICENSE file for details.
-
-## Related Projects
-
-- [npm-package-readme-mcp-server](../npm-package-readme-mcp-server) - MCP server for npm packages
-- [pip-package-readme-mcp-server](../pip-package-readme-mcp-server) - MCP server for PyPI packages
-- [gem-package-readme-mcp-server](../gem-package-readme-mcp-server) - MCP server for RubyGems
+MIT
