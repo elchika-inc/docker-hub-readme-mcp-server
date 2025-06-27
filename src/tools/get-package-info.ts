@@ -5,9 +5,10 @@ import { DockerHubApi } from '../services/docker-hub-api.js';
 import type {
   GetPackageInfoParams,
   PackageInfoResponse,
-  DownloadStats,
   RepositoryInfo,
 } from '../types/index.js';
+import { CACHE_CONFIG } from '../constants/cache-config.js';
+import { withCache } from '../utils/cache-helper.js';
 
 const dockerHubApi = new DockerHubApi();
 
@@ -23,27 +24,43 @@ export async function getPackageInfo(params: GetPackageInfoParams): Promise<Pack
   const { namespace, name } = parseImageName(package_name);
   const fullName = `${namespace}/${name}`;
 
-  // Check cache first
+  // Use cache helper for the entire operation
   const cacheKey = createCacheKey.imageInfo(fullName, 'info');
-  const cached = cache.get<PackageInfoResponse>(cacheKey);
-  if (cached) {
-    logger.debug(`Cache hit for image info: ${fullName}`);
-    return cached;
-  }
+  
+  return withCache(
+    cacheKey,
+    async () => {
+      return await fetchPackageInfo(namespace, name, fullName, include_dependencies);
+    },
+    CACHE_CONFIG.TTL.REPOSITORY_INFO,
+    `Docker image info: ${fullName}`
+  );
+}
+
+/**
+ * Internal function to fetch package info data
+ */
+async function fetchPackageInfo(
+  namespace: string,
+  name: string,
+  fullName: string,
+  include_dependencies: boolean
+): Promise<PackageInfoResponse> {
+  const dockerHubApi = new DockerHubApi();
 
   try {
     // First, verify package exists by trying to get repository info
-    logger.debug(`Checking package existence: ${package_name}`);
+    logger.debug(`Checking package existence: ${fullName}`);
     let repository;
     let packageExists = true;
     
     try {
       repository = await dockerHubApi.getRepository(namespace, name);
-      logger.debug(`Package found: ${package_name}`);
+      logger.debug(`Package found: ${fullName}`);
     } catch (error: any) {
       if (error.statusCode === 404) {
         packageExists = false;
-        logger.debug(`Package not found: ${package_name}`);
+        logger.debug(`Package not found: ${fullName}`);
       } else {
         throw error;
       }
@@ -52,7 +69,7 @@ export async function getPackageInfo(params: GetPackageInfoParams): Promise<Pack
     // If package doesn't exist, return response with exists: false
     if (!packageExists) {
       const response: PackageInfoResponse = {
-        package_name,
+        package_name: fullName,
         latest_version: '',
         description: '',
         author: '',
@@ -60,16 +77,9 @@ export async function getPackageInfo(params: GetPackageInfoParams): Promise<Pack
         keywords: [],
         dependencies: {},
         dev_dependencies: {},
-        download_stats: {
-          pull_count: 0,
-          star_count: 0,
-          last_updated: '',
-        },
         exists: false,
       };
       
-      // Cache the response
-      cache.set(cacheKey, response, 300000); // 5 minutes TTL
       return response;
     }
 
@@ -97,12 +107,6 @@ export async function getPackageInfo(params: GetPackageInfoParams): Promise<Pack
       ? 'latest' 
       : (dependencies ? Object.keys(dependencies)[0] || 'latest' : 'latest');
 
-    // Create stats
-    const downloadStats: DownloadStats = {
-      pull_count: repository!.pull_count,
-      star_count: repository!.star_count,
-      last_updated: repository!.last_updated,
-    };
 
     // Create repository info (for potential GitHub integration)
     let repositoryInfo: RepositoryInfo | undefined;
@@ -111,7 +115,7 @@ export async function getPackageInfo(params: GetPackageInfoParams): Promise<Pack
 
     // Create response
     const response: PackageInfoResponse = {
-      package_name,
+      package_name: fullName,
       latest_version: latestVersion,
       description: repository!.description || 'No description available',
       author: repository!.user,
@@ -119,19 +123,16 @@ export async function getPackageInfo(params: GetPackageInfoParams): Promise<Pack
       keywords: repository!.categories?.map(cat => cat.name) || [],
       dependencies: dependencies || {},
       dev_dependencies: devDependencies || {},
-      download_stats: downloadStats,
       repository: repositoryInfo,
       exists: true,
     };
 
-    // Cache the response
-    cache.set(cacheKey, response, 300000); // 5 minutes TTL
 
     logger.info(`Successfully fetched image info: ${fullName}`);
     return response;
 
   } catch (error) {
-    logger.error(`Failed to fetch image info: ${package_name}`, { error });
+    logger.error(`Failed to fetch image info: ${fullName}`, { error });
     throw error;
   }
 }

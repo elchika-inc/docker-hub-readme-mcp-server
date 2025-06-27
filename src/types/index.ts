@@ -38,11 +38,6 @@ export interface PackageBasicInfo {
   os: string[];
 }
 
-export interface DownloadStats {
-  pull_count: number;
-  star_count: number;
-  last_updated: string;
-}
 
 export interface PackageSearchResult {
   name: string;
@@ -105,7 +100,6 @@ export interface PackageInfoResponse {
   keywords: string[];
   dependencies: Record<string, string>;
   dev_dependencies: Record<string, string>;
-  download_stats: DownloadStats;
   repository?: RepositoryInfo | undefined;
   exists: boolean;
 }

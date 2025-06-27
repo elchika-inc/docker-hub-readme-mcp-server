@@ -10,10 +10,12 @@ import {
   ImageNotFoundError,
   TagNotFoundError,
 } from '../types/index.js';
+import { API_CONFIG } from '../constants/api-config.js';
+import { CACHE_CONFIG } from '../constants/cache-config.js';
 
 export class DockerHubApi {
   private readonly baseUrl = 'https://hub.docker.com/v2';
-  private readonly requestTimeout = 30000;
+  private readonly requestTimeout = API_CONFIG.REQUEST_TIMEOUT;
 
   private async fetchWithTimeout(url: string, options: RequestInit = {}): Promise<Response> {
     const controller = new AbortController();
@@ -62,7 +64,7 @@ export class DockerHubApi {
       const data = await response.json() as DockerHubRepository;
       
       // Cache the result
-      cache.set(cacheKey, data, 300000); // 5 minutes TTL
+      cache.set(cacheKey, data, CACHE_CONFIG.TTL.REPOSITORY_INFO);
       logger.debug(`Repository info fetched and cached: ${fullName}`);
       
       return data;
@@ -93,7 +95,7 @@ export class DockerHubApi {
       const data = await response.json() as DockerHubTagsResponse;
       
       // Cache the result
-      cache.set(cacheKey, data, 300000); // 5 minutes TTL
+      cache.set(cacheKey, data, CACHE_CONFIG.TTL.TAGS_INFO);
       logger.debug(`Tags fetched and cached: ${fullName}`);
       
       return data;

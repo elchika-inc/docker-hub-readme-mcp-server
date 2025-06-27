@@ -4,6 +4,8 @@ import { cache, createCacheKey } from '../services/cache.js';
 import { DockerHubApi } from '../services/docker-hub-api.js';
 import { githubApi } from '../services/github-api.js';
 import { readmeParser } from '../services/readme-parser.js';
+import { withCache } from '../utils/cache-helper.js';
+import { CACHE_CONFIG } from '../constants/cache-config.js';
 import type {
   GetPackageReadmeParams,
   PackageReadmeResponse,
@@ -29,27 +31,44 @@ export async function getPackageReadme(params: GetPackageReadmeParams): Promise<
   const { namespace, name } = parseImageName(package_name);
   const fullName = `${namespace}/${name}`;
 
-  // Check cache first
+  // Use cache helper for the entire operation
   const cacheKey = createCacheKey.imageReadme(fullName, version);
-  const cached = cache.get<PackageReadmeResponse>(cacheKey);
-  if (cached) {
-    logger.debug(`Cache hit for image README: ${fullName}:${version}`);
-    return cached;
-  }
+  
+  return withCache(
+    cacheKey,
+    async () => {
+      return await fetchPackageReadme(namespace, name, fullName, version, include_examples);
+    },
+    CACHE_CONFIG.TTL.REPOSITORY_INFO,
+    `Docker image README: ${fullName}:${version}`
+  );
+}
+
+/**
+ * Internal function to fetch package README data
+ */
+async function fetchPackageReadme(
+  namespace: string,
+  name: string,
+  fullName: string,
+  version: string,
+  include_examples: boolean
+): Promise<PackageReadmeResponse> {
+  const dockerHubApi = new DockerHubApi();
 
   try {
     // First, verify package exists by trying to get repository info
-    logger.debug(`Checking package existence: ${package_name}`);
+    logger.debug(`Checking package existence: ${fullName}`);
     let repository;
     let packageExists = true;
     
     try {
       repository = await dockerHubApi.getRepository(namespace, name);
-      logger.debug(`Package found: ${package_name}`);
+      logger.debug(`Package found: ${fullName}`);
     } catch (error: any) {
       if (error.statusCode === 404) {
         packageExists = false;
-        logger.debug(`Package not found: ${package_name}`);
+        logger.debug(`Package not found: ${fullName}`);
       } else {
         throw error;
       }
@@ -58,16 +77,16 @@ export async function getPackageReadme(params: GetPackageReadmeParams): Promise<
     // If package doesn't exist, return response with exists: false
     if (!packageExists) {
       const response: PackageReadmeResponse = {
-        package_name,
+        package_name: fullName,
         version,
         description: '',
         readme_content: '',
         usage_examples: [],
         installation: {
-          pull: `docker pull ${package_name}:${version}`,
+          pull: `docker pull ${fullName}:${version}`,
         },
         basic_info: {
-          name: package_name.split('/').pop() || package_name,
+          name: name,
           version,
           description: '',
           namespace: namespace,
@@ -80,8 +99,6 @@ export async function getPackageReadme(params: GetPackageReadmeParams): Promise<
         exists: false,
       };
       
-      // Cache the response
-      cache.set(cacheKey, response);
       return response;
     }
     
@@ -166,7 +183,7 @@ export async function getPackageReadme(params: GetPackageReadmeParams): Promise<
 
     // Create response
     const response: PackageReadmeResponse = {
-      package_name,
+      package_name: fullName,
       version,
       description: basicInfo.description,
       readme_content: cleanedReadme,
@@ -177,22 +194,49 @@ export async function getPackageReadme(params: GetPackageReadmeParams): Promise<
       exists: true,
     };
 
-    // Cache the response
-    cache.set(cacheKey, response);
-
     logger.info(`Successfully fetched image README: ${fullName}:${version} (README source: ${readmeSource})`);
     return response;
 
   } catch (error) {
-    logger.error(`Failed to fetch image README: ${package_name}:${version}`, { error });
+    logger.error(`Failed to fetch image README: ${fullName}:${version}`, { error });
+    
+    // Re-throw Docker Hub specific errors
+    if (error instanceof Error && (error.message.includes('not found') || error.message.includes('404'))) {
+      throw new Error(`Docker image '${fullName}' not found`);
+    }
+    
     throw error;
   }
 }
 
-async function inferGitHubRepository(_repository: any): Promise<RepositoryInfo | null> {
-  // Docker Hub doesn't always provide direct repository links
-  // We could implement heuristics to find the GitHub repository
-  // For now, return null - this could be enhanced
+async function inferGitHubRepository(repository: any): Promise<RepositoryInfo | null> {
+  // Try to infer GitHub repository from description or common patterns
+  if (repository.description) {
+    const githubUrlMatch = repository.description.match(/https:\/\/github\.com\/([^\/\s]+)\/([^\/\s]+)/);
+    if (githubUrlMatch) {
+      return {
+        type: 'git',
+        url: githubUrlMatch[0],
+      };
+    }
+  }
+  
+  // Common pattern: official images often have github.com/docker-library/IMAGENAME
+  if (repository.namespace === 'library') {
+    return {
+      type: 'git',
+      url: `https://github.com/docker-library/${repository.name}`,
+    };
+  }
+  
+  // For user/org repositories, try common pattern
+  if (repository.namespace && repository.namespace !== 'library') {
+    return {
+      type: 'git',
+      url: `https://github.com/${repository.namespace}/${repository.name}`,
+    };
+  }
+  
   return null;
 }
 

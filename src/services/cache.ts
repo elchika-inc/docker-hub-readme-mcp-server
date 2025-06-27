@@ -1,5 +1,6 @@
 import { logger } from '../utils/logger.js';
 import type { CacheEntry, CacheOptions } from '../types/index.js';
+import { CACHE_CONFIG } from '../constants/cache-config.js';
 
 export class MemoryCache {
   private cache = new Map<string, CacheEntry<unknown>>();
@@ -8,13 +9,13 @@ export class MemoryCache {
   private readonly cleanupInterval: NodeJS.Timeout;
 
   constructor(options: CacheOptions = {}) {
-    this.defaultTtl = options.ttl || 3600 * 1000; // 1 hour default in milliseconds
-    this.maxSize = options.maxSize || 104857600; // 100MB default
+    this.defaultTtl = options.ttl || CACHE_CONFIG.TTL.DEFAULT;
+    this.maxSize = options.maxSize || CACHE_CONFIG.SIZES.DEFAULT_MAX_SIZE;
     
     // Clean up expired entries every 5 minutes
     this.cleanupInterval = setInterval(() => {
       this.cleanup();
-    }, 5 * 60 * 1000);
+    }, CACHE_CONFIG.CLEANUP_INTERVAL);
   }
 
   set<T>(key: string, value: T, ttl?: number): void {

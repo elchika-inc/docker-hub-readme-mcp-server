@@ -7,6 +7,8 @@ import type {
   SearchPackagesResponse,
   PackageSearchResult,
 } from '../types/index.js';
+import { CACHE_CONFIG } from '../constants/cache-config.js';
+import { withCache } from '../utils/cache-helper.js';
 
 const dockerHubApi = new DockerHubApi();
 
@@ -19,13 +21,29 @@ export async function searchPackages(params: SearchPackagesParams): Promise<Sear
   validateSearchQuery(query);
   validateLimit(limit);
 
-  // Check cache first
+  // Use cache helper for the entire operation
   const cacheKey = createCacheKey.searchResults(query, limit, undefined, undefined);
-  const cached = cache.get<SearchPackagesResponse>(cacheKey);
-  if (cached) {
-    logger.debug(`Cache hit for search: ${query}`);
-    return cached;
-  }
+  
+  return withCache(
+    cacheKey,
+    async () => {
+      return await performDockerHubSearch(query, limit, quality, popularity);
+    },
+    CACHE_CONFIG.TTL.SEARCH_RESULTS,
+    `Docker Hub search: ${query}`
+  );
+}
+
+/**
+ * Internal function to perform Docker Hub search
+ */
+async function performDockerHubSearch(
+  query: string,
+  limit: number,
+  quality?: number,
+  popularity?: number
+): Promise<SearchPackagesResponse> {
+  const dockerHubApi = new DockerHubApi();
 
   try {
     // Search repositories on Docker Hub
@@ -80,9 +98,6 @@ export async function searchPackages(params: SearchPackagesParams): Promise<Sear
       total: searchResponse.count,
       packages,
     };
-
-    // Cache the response
-    cache.set(cacheKey, response, 600000); // 10 minutes TTL
 
     logger.info(`Successfully searched images: ${query} (found ${packages.length}/${searchResponse.count} results)`);
     return response;

@@ -31,18 +31,18 @@ export function validateImageName(imageName: string): void {
   for (const part of parts) {
     if (!/^[a-z0-9]([a-z0-9._-]*[a-z0-9])?$/.test(part)) {
       throw new DockerHubMcpError(
-        'Image name parts must start and end with lowercase letters or numbers, and can contain dots, underscores, and hyphens',
+        'Image name parts must start and end with lowercase letters or numbers, and can contain dots, underscores, and hyphens. Example: "nginx" or "library/postgres"',
         'INVALID_IMAGE_NAME'
       );
     }
     
     if (part.length < 2 || part.length > 255) {
-      throw new DockerHubMcpError('Image name parts must be between 2 and 255 characters', 'INVALID_IMAGE_NAME');
+      throw new DockerHubMcpError('Image name parts must be between 2 and 255 characters. Example: "db" (2 chars) or "very-long-service-name" (longer)', 'INVALID_IMAGE_NAME');
     }
     
     // Check for consecutive special characters
     if (/[._-]{2,}/.test(part)) {
-      throw new DockerHubMcpError('Image name cannot contain consecutive dots, underscores, or hyphens', 'INVALID_IMAGE_NAME');
+      throw new DockerHubMcpError('Image name cannot contain consecutive dots, underscores, or hyphens. Example: use "my-app" not "my--app"', 'INVALID_IMAGE_NAME');
     }
   }
 }
