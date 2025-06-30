@@ -1,0 +1,431 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { DockerHubApi } from '../../src/services/docker-hub-api.js';
+import type { DockerHubRepository, DockerHubTagsResponse, DockerHubSearchResponse } from '../../src/types/index.js';
+
+// Mock the cache and logger modules
+vi.mock('../../src/services/cache.js', () => ({
+  cache: {
+    get: vi.fn(),
+    set: vi.fn(),
+  },
+  createCacheKey: {
+    imageInfo: vi.fn((name: string, tag: string) => `img_info:${name}:${tag}`),
+    imageTags: vi.fn((name: string) => `tags:${name}`),
+    searchResults: vi.fn((query: string) => `search:${query}`),
+  },
+}));
+
+vi.mock('../../src/utils/logger.js', () => ({
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+vi.mock('../../src/utils/error-handler.js', () => ({
+  withRetry: vi.fn((fn) => fn()),
+  handleApiError: vi.fn(),
+  handleHttpError: vi.fn(),
+}));
+
+describe('DockerHubApi', () => {
+  let api: DockerHubApi;
+  let mockFetch: any;
+
+  beforeEach(() => {
+    api = new DockerHubApi();
+    mockFetch = vi.fn();
+    global.fetch = mockFetch;
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe('getRepository', () => {
+    const mockRepository: DockerHubRepository = {
+      name: 'nginx',
+      namespace: 'library',
+      repository_type: 'image',
+      status: 1,
+      description: 'Official build of Nginx.',
+      is_private: false,
+      is_automated: false,
+      is_migrated: false,
+      can_edit: false,
+      star_count: 100,
+      pull_count: 1000000,
+      last_updated: '2023-01-01T00:00:00Z',
+      date_registered: '2013-01-01T00:00:00Z',
+      collaborator_count: 0,
+      affiliation: null,
+      hub_user: 'library',
+      has_starred: false,
+      full_description: 'Nginx is a web server...',
+      permissions: {
+        read: true,
+        write: false,
+        admin: false,
+      },
+    };
+
+    it('should fetch repository successfully', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockRepository,
+      });
+
+      const result = await api.getRepository('library', 'nginx');
+
+      expect(result).toEqual(mockRepository);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://hub.docker.com/v2/repositories/library/nginx/',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'User-Agent': 'docker-hub-readme-mcp-server/1.0.0',
+            'Accept': 'application/json',
+          }),
+        })
+      );
+    });
+
+    it('should handle HTTP errors', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+
+      await expect(api.getRepository('library', 'nonexistent')).rejects.toThrow();
+    });
+
+    it('should handle fetch timeout', async () => {
+      mockFetch.mockImplementationOnce(() => 
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('AbortError')), 100)
+        )
+      );
+
+      await expect(api.getRepository('library', 'nginx')).rejects.toThrow();
+    });
+  });
+
+  describe('getTags', () => {
+    const mockTagsResponse: DockerHubTagsResponse = {
+      count: 2,
+      next: null,
+      previous: null,
+      results: [
+        {
+          name: 'latest',
+          full_size: 50000000,
+          id: 1,
+          repository: 1,
+          creator: 1,
+          last_updater: 1,
+          last_updated: '2023-01-01T00:00:00Z',
+          image_id: null,
+          v2: true,
+          platforms: [{
+            architecture: 'amd64',
+            variant: null,
+            features: null,
+            os: 'linux',
+            os_features: null,
+            os_version: null,
+            size: 50000000,
+            status: 'active',
+            last_pulled: '2023-01-01T00:00:00Z',
+            last_pushed: '2023-01-01T00:00:00Z',
+          }],
+        },
+        {
+          name: '1.20',
+          full_size: 48000000,
+          id: 2,
+          repository: 1,
+          creator: 1,
+          last_updater: 1,
+          last_updated: '2022-12-01T00:00:00Z',
+          image_id: null,
+          v2: true,
+          platforms: [{
+            architecture: 'amd64',
+            variant: null,
+            features: null,
+            os: 'linux',
+            os_features: null,
+            os_version: null,
+            size: 48000000,
+            status: 'active',
+            last_pulled: '2022-12-01T00:00:00Z',
+            last_pushed: '2022-12-01T00:00:00Z',
+          }],
+        },
+      ],
+    };
+
+    it('should fetch tags successfully', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockTagsResponse,
+      });
+
+      const result = await api.getTags('library', 'nginx');
+
+      expect(result).toEqual(mockTagsResponse);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://hub.docker.com/v2/repositories/library/nginx/tags/?page=1&page_size=25',
+        expect.any(Object)
+      );
+    });
+
+    it('should handle pagination parameters', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockTagsResponse,
+      });
+
+      await api.getTags('library', 'nginx', 2, 10);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://hub.docker.com/v2/repositories/library/nginx/tags/?page=2&page_size=10',
+        expect.any(Object)
+      );
+    });
+  });
+
+  describe('searchRepositories', () => {
+    const mockSearchResponse: DockerHubSearchResponse = {
+      count: 1,
+      next: null,
+      previous: null,
+      results: [
+        {
+          repo_name: 'nginx',
+          short_description: 'Official build of Nginx.',
+          star_count: 100,
+          pull_count: 1000000,
+          repo_owner: null,
+          is_automated: false,
+          is_official: true,
+        },
+      ],
+    };
+
+    it('should search repositories successfully', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockSearchResponse,
+      });
+
+      const result = await api.searchRepositories('nginx');
+
+      expect(result).toEqual(mockSearchResponse);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('https://hub.docker.com/v2/search/repositories/'),
+        expect.any(Object)
+      );
+    });
+
+    it('should handle search parameters', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockSearchResponse,
+      });
+
+      await api.searchRepositories('nginx', 2, 10, true, false);
+
+      const callUrl = mockFetch.mock.calls[0][0];
+      expect(callUrl).toContain('q=nginx');
+      expect(callUrl).toContain('page=2');
+      expect(callUrl).toContain('page_size=10');
+      expect(callUrl).toContain('is_official=true');
+      expect(callUrl).toContain('is_automated=false');
+    });
+  });
+
+  describe('getTagDetails', () => {
+    const mockTagsResponse: DockerHubTagsResponse = {
+      count: 2,
+      next: null,
+      previous: null,
+      results: [
+        {
+          name: 'latest',
+          full_size: 50000000,
+          id: 1,
+          repository: 1,
+          creator: 1,
+          last_updater: 1,
+          last_updated: '2023-01-01T00:00:00Z',
+          image_id: null,
+          v2: true,
+          platforms: [],
+        },
+        {
+          name: '1.20',
+          full_size: 48000000,
+          id: 2,
+          repository: 1,
+          creator: 1,
+          last_updater: 1,
+          last_updated: '2022-12-01T00:00:00Z',
+          image_id: null,
+          v2: true,
+          platforms: [],
+        },
+      ],
+    };
+
+    it('should find tag in first page', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockTagsResponse,
+      });
+
+      const result = await api.getTagDetails('library', 'nginx', 'latest');
+
+      expect(result).toEqual(mockTagsResponse.results[0]);
+    });
+
+    it('should return null for non-existent tag', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ...mockTagsResponse, results: [] }),
+      });
+
+      const result = await api.getTagDetails('library', 'nginx', 'nonexistent');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getRepositoryReadme', () => {
+    const mockRepository: DockerHubRepository = {
+      name: 'nginx',
+      namespace: 'library',
+      repository_type: 'image',
+      status: 1,
+      description: 'Official build of Nginx.',
+      is_private: false,
+      is_automated: false,
+      is_migrated: false,
+      can_edit: false,
+      star_count: 100,
+      pull_count: 1000000,
+      last_updated: '2023-01-01T00:00:00Z',
+      date_registered: '2013-01-01T00:00:00Z',
+      collaborator_count: 0,
+      affiliation: null,
+      hub_user: 'library',
+      has_starred: false,
+      full_description: 'This is the full README content...',
+      permissions: {
+        read: true,
+        write: false,
+        admin: false,
+      },
+    };
+
+    it('should return repository full description', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockRepository,
+      });
+
+      const result = await api.getRepositoryReadme('library', 'nginx');
+
+      expect(result).toBe(mockRepository.full_description);
+    });
+
+    it('should return null when no full description', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ...mockRepository, full_description: null }),
+      });
+
+      const result = await api.getRepositoryReadme('library', 'nginx');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('validateImageExists', () => {
+    it('should return true for existing image', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      const result = await api.validateImageExists('library', 'nginx');
+
+      expect(result).toBe(true);
+    });
+
+    it('should return false for non-existent image', async () => {
+      const { ImageNotFoundError } = await import('../../src/types/index.js');
+      const { handleHttpError } = await import('../../src/utils/error-handler.js');
+      
+      // Mock handleHttpError to throw ImageNotFoundError for 404
+      vi.mocked(handleHttpError).mockImplementationOnce(() => {
+        throw new ImageNotFoundError('Image not found');
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+
+      const result = await api.validateImageExists('library', 'nonexistent');
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('validateTagExists', () => {
+    it('should return true for existing tag', async () => {
+      const mockTagsResponse: DockerHubTagsResponse = {
+        count: 1,
+        next: null,
+        previous: null,
+        results: [
+          {
+            name: 'latest',
+            full_size: 50000000,
+            id: 1,
+            repository: 1,
+            creator: 1,
+            last_updater: 1,
+            last_updated: '2023-01-01T00:00:00Z',
+            image_id: null,
+            v2: true,
+            platforms: [],
+          },
+        ],
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockTagsResponse,
+      });
+
+      const result = await api.validateTagExists('library', 'nginx', 'latest');
+
+      expect(result).toBe(true);
+    });
+
+    it('should return false for non-existent tag', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ count: 0, next: null, previous: null, results: [] }),
+      });
+
+      const result = await api.validateTagExists('library', 'nginx', 'nonexistent');
+
+      expect(result).toBe(false);
+    });
+  });
+});

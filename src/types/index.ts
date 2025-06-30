@@ -243,3 +243,9 @@ export class NetworkError extends DockerHubMcpError {
     super(`Network error: ${message}`, 'NETWORK_ERROR', undefined, originalError);
   }
 }
+
+export class ValidationError extends DockerHubMcpError {
+  constructor(message: string) {
+    super(`Validation error: ${message}`, 'VALIDATION_ERROR', 400);
+  }
+}

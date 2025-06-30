@@ -75,13 +75,13 @@ export class ParameterValidator {
     }
 
     if (params.quality !== undefined) {
-      if (typeof params.quality !== 'number' || params.quality < 0 || params.quality > 1) {
+      if (typeof params.quality !== 'number' || isNaN(params.quality) || params.quality < 0 || params.quality > 1) {
         throw new Error('quality must be a number between 0 and 1. Example: 0.8 for high quality results');
       }
     }
 
     if (params.popularity !== undefined) {
-      if (typeof params.popularity !== 'number' || params.popularity < 0 || params.popularity > 1) {
+      if (typeof params.popularity !== 'number' || isNaN(params.popularity) || params.popularity < 0 || params.popularity > 1) {
         throw new Error('popularity must be a number between 0 and 1. Example: 0.5 for moderately popular images');
       }
     }

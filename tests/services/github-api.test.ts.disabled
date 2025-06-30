@@ -1,0 +1,289 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { GitHubApiClient } from '../../src/services/github-api.js';
+import type { RepositoryInfo } from '../../src/types/index.js';
+
+// Mock the logger and error handler modules
+vi.mock('../../src/utils/logger.js', () => ({
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+vi.mock('../../src/utils/error-handler.js', () => ({
+  withRetry: vi.fn((fn) => fn()),
+  handleApiError: vi.fn(),
+  handleHttpError: vi.fn(),
+}));
+
+describe('GitHubApiClient', () => {
+  let client: GitHubApiClient;
+  let mockFetch: any;
+
+  beforeEach(() => {
+    mockFetch = vi.fn();
+    global.fetch = mockFetch;
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe('constructor', () => {
+    it('should create client without token', () => {
+      client = new GitHubApiClient();
+      expect(client).toBeInstanceOf(GitHubApiClient);
+    });
+
+    it('should create client with token', () => {
+      client = new GitHubApiClient('test-token');
+      expect(client).toBeInstanceOf(GitHubApiClient);
+    });
+
+    it('should create client with custom timeout', () => {
+      client = new GitHubApiClient('test-token', 60000);
+      expect(client).toBeInstanceOf(GitHubApiClient);
+    });
+  });
+
+  describe('getReadme', () => {
+    beforeEach(() => {
+      client = new GitHubApiClient('test-token');
+    });
+
+    it('should fetch README successfully with token', async () => {
+      const mockReadmeContent = '# Test README\n\nThis is a test readme.';
+      
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: async () => mockReadmeContent,
+      });
+
+      const result = await client.getReadme('owner', 'repo');
+
+      expect(result).toBe(mockReadmeContent);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.github.com/repos/owner/repo/readme',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'Accept': 'application/vnd.github.v3.raw',
+            'User-Agent': 'docker-hub-readme-mcp/1.0.0',
+            'Authorization': 'token test-token',
+          }),
+        })
+      );
+    });
+
+    it('should fetch README successfully without token', async () => {
+      client = new GitHubApiClient();
+      const mockReadmeContent = '# Test README\n\nThis is a test readme.';
+      
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: async () => mockReadmeContent,
+      });
+
+      const result = await client.getReadme('owner', 'repo');
+
+      expect(result).toBe(mockReadmeContent);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.github.com/repos/owner/repo/readme',
+        expect.objectContaining({
+          headers: expect.not.objectContaining({
+            'Authorization': expect.any(String),
+          }),
+        })
+      );
+    });
+
+    it('should handle HTTP errors', async () => {
+      const { handleHttpError } = await import('../../src/utils/error-handler.js');
+      
+      // Mock handleHttpError to throw an error
+      vi.mocked(handleHttpError).mockImplementationOnce(() => {
+        throw new Error('HTTP error');
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+
+      await expect(client.getReadme('owner', 'nonexistent')).rejects.toThrow();
+    });
+
+    it('should handle timeout', async () => {
+      client = new GitHubApiClient('test-token', 100);
+      
+      // Mock fetch to never resolve
+      mockFetch.mockImplementationOnce(() => 
+        new Promise(() => {}) // Never resolves
+      );
+
+      await expect(client.getReadme('owner', 'repo')).rejects.toThrow();
+    });
+
+    it('should encode special characters in owner and repo names', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: async () => 'README content',
+      });
+
+      await client.getReadme('owner/with/slashes', 'repo@special');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.github.com/repos/owner%2Fwith%2Fslashes/repo%40special/readme',
+        expect.any(Object)
+      );
+    });
+  });
+
+  describe('parseRepositoryUrl', () => {
+    beforeEach(() => {
+      client = new GitHubApiClient();
+    });
+
+    it('should parse HTTPS GitHub URLs', () => {
+      const testCases = [
+        'https://github.com/owner/repo',
+        'https://github.com/owner/repo.git',
+        'https://github.com/owner/repo/',
+        'https://github.com/owner/repo/tree/main',
+      ];
+
+      testCases.forEach(url => {
+        const result = client.parseRepositoryUrl(url);
+        expect(result).toEqual({ owner: 'owner', repo: 'repo' });
+      });
+    });
+
+    it('should parse HTTP GitHub URLs', () => {
+      const result = client.parseRepositoryUrl('http://github.com/owner/repo');
+      expect(result).toEqual({ owner: 'owner', repo: 'repo' });
+    });
+
+    it('should parse git+https URLs', () => {
+      const result = client.parseRepositoryUrl('git+https://github.com/owner/repo.git');
+      expect(result).toEqual({ owner: 'owner', repo: 'repo' });
+    });
+
+    it('should parse git:// URLs', () => {
+      const result = client.parseRepositoryUrl('git://github.com/owner/repo.git');
+      expect(result).toEqual({ owner: 'owner', repo: 'repo' });
+    });
+
+    it('should parse SSH URLs', () => {
+      const result = client.parseRepositoryUrl('git@github.com:owner/repo.git');
+      expect(result).toEqual({ owner: 'owner', repo: 'repo' });
+    });
+
+    it('should return null for non-GitHub URLs', () => {
+      const testCases = [
+        'https://gitlab.com/owner/repo',
+        'https://bitbucket.org/owner/repo',
+        'https://example.com/owner/repo',
+        'not-a-url',
+        '',
+      ];
+
+      testCases.forEach(url => {
+        const result = client.parseRepositoryUrl(url);
+        expect(result).toBeNull();
+      });
+    });
+
+    it('should handle complex repository names', () => {
+      const result = client.parseRepositoryUrl('https://github.com/facebook/react-native');
+      expect(result).toEqual({ owner: 'facebook', repo: 'react-native' });
+    });
+
+    it('should handle URLs with special characters', () => {
+      const result = client.parseRepositoryUrl('https://github.com/owner-123/repo_name.js');
+      expect(result).toEqual({ owner: 'owner-123', repo: 'repo_name.js' });
+    });
+  });
+
+  describe('getReadmeFromRepository', () => {
+    beforeEach(() => {
+      client = new GitHubApiClient('test-token');
+    });
+
+    it('should get README from git repository', async () => {
+      const repositoryInfo: RepositoryInfo = {
+        type: 'git',
+        url: 'https://github.com/owner/repo',
+      };
+
+      const mockReadmeContent = '# Repository README';
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: async () => mockReadmeContent,
+      });
+
+      const result = await client.getReadmeFromRepository(repositoryInfo);
+
+      expect(result).toBe(mockReadmeContent);
+    });
+
+    it('should return null for non-git repositories', async () => {
+      const repositoryInfo: RepositoryInfo = {
+        type: 'hg',
+        url: 'https://bitbucket.org/owner/repo',
+      };
+
+      const result = await client.getReadmeFromRepository(repositoryInfo);
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null for unparseable URLs', async () => {
+      const repositoryInfo: RepositoryInfo = {
+        type: 'git',
+        url: 'https://gitlab.com/owner/repo',
+      };
+
+      const result = await client.getReadmeFromRepository(repositoryInfo);
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null when README fetch fails', async () => {
+      const repositoryInfo: RepositoryInfo = {
+        type: 'git',
+        url: 'https://github.com/owner/repo',
+      };
+
+      // Mock fetch to reject
+      mockFetch.mockRejectedValueOnce(new Error('Network error'));
+
+      const result = await client.getReadmeFromRepository(repositoryInfo);
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('isRateLimited', () => {
+    beforeEach(() => {
+      client = new GitHubApiClient();
+    });
+
+    it('should return false (placeholder implementation)', () => {
+      const result = client.isRateLimited();
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('getRateLimitStatus', () => {
+    beforeEach(() => {
+      client = new GitHubApiClient();
+    });
+
+    it('should return null (placeholder implementation)', () => {
+      const result = client.getRateLimitStatus();
+      expect(result).toBeNull();
+    });
+  });
+});

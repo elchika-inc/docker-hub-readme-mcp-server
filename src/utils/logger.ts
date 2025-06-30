@@ -6,7 +6,7 @@ export enum LogLevel {
 }
 
 
-class Logger {
+export class Logger {
   private logLevel: LogLevel;
 
   constructor(logLevel?: LogLevel | string) {
@@ -28,28 +28,28 @@ class Logger {
 
     switch (level) {
       case LogLevel.ERROR:
-        if (data) {
+        if (data !== undefined) {
           console.error(logMessage, data);
         } else {
           console.error(logMessage);
         }
         break;
       case LogLevel.WARN:
-        if (data) {
+        if (data !== undefined) {
           console.warn(logMessage, data);
         } else {
           console.warn(logMessage);
         }
         break;
       case LogLevel.INFO:
-        if (data) {
+        if (data !== undefined) {
           console.info(logMessage, data);
         } else {
           console.info(logMessage);
         }
         break;
       case LogLevel.DEBUG:
-        if (data) {
+        if (data !== undefined) {
           console.debug(logMessage, data);
         } else {
           console.debug(logMessage);

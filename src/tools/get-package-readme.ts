@@ -6,6 +6,8 @@ import { githubApi } from '../services/github-api.js';
 import { readmeParser } from '../services/readme-parser.js';
 import { withCache } from '../utils/cache-helper.js';
 import { CACHE_CONFIG } from '../constants/cache-config.js';
+import { API_CONFIG } from '../constants/api-config.js';
+import { COMMON_DOCKER_SERVICES } from '../constants/common-services.js';
 import type {
   GetPackageReadmeParams,
   PackageReadmeResponse,
@@ -54,7 +56,6 @@ async function fetchPackageReadme(
   version: string,
   include_examples: boolean
 ): Promise<PackageReadmeResponse> {
-  const dockerHubApi = new DockerHubApi();
 
   try {
     // First, verify package exists by trying to get repository info
@@ -172,7 +173,6 @@ async function fetchPackageReadme(
       os: [...new Set(osTypes)],
     };
 
-    // No longer needed as DownloadStats is removed from PackageReadmeResponse
 
     // Create repository info (for GitHub fallback)
     let repositoryInfo: RepositoryInfo | undefined;
@@ -241,12 +241,7 @@ async function inferGitHubRepository(repository: any): Promise<RepositoryInfo | 
 }
 
 function isCommonService(name: string): boolean {
-  const commonServices = [
-    'nginx', 'apache', 'httpd', 'mysql', 'postgres', 'postgresql',
-    'redis', 'mongodb', 'mongo', 'node', 'python', 'ubuntu',
-    'alpine', 'debian', 'centos', 'jenkins', 'wordpress',
-  ];
-  return commonServices.includes(name.toLowerCase());
+  return COMMON_DOCKER_SERVICES.includes(name.toLowerCase() as any);
 }
 
 function generateComposeExample(fullName: string, version: string): string {

@@ -1,4 +1,4 @@
-import { BasePackageServer, ToolDefinition, ResponseFormatter } from '@elchika-inc/package-readme-shared';
+import { BasePackageServer, ToolDefinition } from '@elchika-inc/package-readme-shared';
 import { getPackageReadme } from './tools/get-package-readme.js';
 import { getPackageInfo } from './tools/get-package-info.js';
 import { searchPackages } from './tools/search-packages.js';
@@ -75,7 +75,7 @@ const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
           description: 'Maximum number of results to return (default: 20)',
           default: 20,
           minimum: 1,
-          maximum: 100,
+          maximum: 250,
         },
         quality: {
           type: 'number',
@@ -111,13 +111,13 @@ export class DockerHubMcpServer extends BasePackageServer {
     try {
       switch (name) {
         case 'get_readme_from_docker':
-          return this.formatToolResponse(await getPackageReadme(ParameterValidator.validateGetPackageReadmeParams(args)));
+          return await getPackageReadme(ParameterValidator.validateGetPackageReadmeParams(args));
         
         case 'get_package_info_from_docker':
-          return this.formatToolResponse(await getPackageInfo(ParameterValidator.validateGetPackageInfoParams(args)));
+          return await getPackageInfo(ParameterValidator.validateGetPackageInfoParams(args));
         
         case 'search_packages_from_docker':
-          return this.formatToolResponse(await searchPackages(ParameterValidator.validateSearchPackagesParams(args)));
+          return await searchPackages(ParameterValidator.validateSearchPackagesParams(args));
         
         default:
           throw new Error(`Unknown tool: ${name}`);
@@ -126,17 +126,6 @@ export class DockerHubMcpServer extends BasePackageServer {
       logger.error(`Tool execution failed: ${name}`, { error, args });
       throw error;
     }
-  }
-
-  private formatToolResponse(result: unknown): { content: Array<{ type: string; text: string }> } {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(result, null, 2)
-        }
-      ]
-    };
   }
 
 

@@ -145,7 +145,7 @@ export class DockerHubApi {
       const data = await response.json() as DockerHubSearchResponse;
       
       // Cache the result
-      cache.set(cacheKey, data, 600000); // 10 minutes TTL
+      cache.set(cacheKey, data, API_CONFIG.SEARCH_RESULTS_TTL);
       logger.debug(`Search results fetched and cached: ${query}`);
       
       return data;
@@ -162,7 +162,7 @@ export class DockerHubApi {
         let currentPage = 2;
         let hasMore = tagsResponse.next !== null;
         
-        while (hasMore && currentPage <= 5) { // Limit to 5 pages max
+        while (hasMore && currentPage <= API_CONFIG.MAX_TAG_SEARCH_PAGES) {
           const nextTagsResponse = await this.getTags(namespace, name, currentPage);
           const foundTag = nextTagsResponse.results.find(t => t.name === tag);
           
